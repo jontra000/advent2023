@@ -1,50 +1,46 @@
 module P1 (run1, run2, inputLocation) where
 
-import Data.List (find)
+import Data.List (isPrefixOf)
 import Data.Char (isDigit, digitToInt)
-import Data.Maybe (fromJust)
 
 run1 :: String -> Int
-run1 = solve1 . parse
+run1 = solve . parse1
 
 run2 :: String -> Int
-run2 = solve2 . parse
+run2 = solve . parse2
 
 inputLocation :: String
 inputLocation = "inputs/input1"
 
-parse :: String -> [String]
-parse = lines
+parse1 :: String -> [[Int]]
+parse1 = map parseLine1 . lines
 
-solve1 :: [String] -> Int
-solve1 = sum . map extractValue
+solve :: [[Int]] -> Int
+solve = sum . map extractValue
 
-extractValue :: String -> Int
-extractValue s =
-    let digitLeft = getFirstDigit s
-        digitRight = getFirstDigit (reverse s)
-    in  10 * digitLeft + digitRight
+extractValue :: [Int] -> Int
+extractValue xs = head xs * 10 + last xs
 
-getFirstDigit :: String -> Int
-getFirstDigit = digitToInt . fromJust . find isDigit
+parseLine1 :: String -> [Int]
+parseLine1 [] = []
+parseLine1 (c:cs)
+    | isDigit c = digitToInt c : parseLine1 cs
+    | otherwise = parseLine1 cs
 
-solve2 :: [String] -> Int
-solve2 = sum . map (extractValue2 . extractDigits)
+parse2 :: String -> [[Int]]
+parse2 = map parseLine2 . lines
 
-extractValue2 :: [Int] -> Int
-extractValue2 s = head s * 10 + last s
-    
-extractDigits :: String -> [Int]
-extractDigits [] = []
-extractDigits s@(c:cs)
-    | isDigit c = (digitToInt c) : extractDigits cs
-    | otherwise = case s of 'o':'n':'e':_ -> 1 : extractDigits cs
-                            't':'w':'o':_ -> 2 : extractDigits cs
-                            't':'h':'r':'e':'e':_ -> 3 : extractDigits cs
-                            'f':'o':'u':'r':_ -> 4 : extractDigits cs
-                            'f':'i':'v':'e':_ -> 5 : extractDigits cs
-                            's':'i':'x':_ -> 6 : extractDigits cs
-                            's':'e':'v':'e':'n':_ -> 7 : extractDigits cs
-                            'e':'i':'g':'h':'t':_ -> 8 : extractDigits cs
-                            'n':'i':'n':'e':_ -> 9 : extractDigits cs
-                            _ -> extractDigits cs
+parseLine2 :: String -> [Int]
+parseLine2 [] = []
+parseLine2 s@(c:cs)
+    | isDigit c = digitToInt c : parseLine2 cs
+    | "one" `isPrefixOf` s = 1 : parseLine2 cs
+    | "two" `isPrefixOf` s = 2 : parseLine2 cs
+    | "three" `isPrefixOf` s = 3 : parseLine2 cs
+    | "four" `isPrefixOf` s = 4 : parseLine2 cs
+    | "five" `isPrefixOf` s = 5 : parseLine2 cs
+    | "six" `isPrefixOf` s = 6 : parseLine2 cs
+    | "seven" `isPrefixOf` s = 7 : parseLine2 cs
+    | "eight" `isPrefixOf` s = 8 : parseLine2 cs
+    | "nine" `isPrefixOf` s = 9 : parseLine2 cs
+    | otherwise = parseLine2 cs
