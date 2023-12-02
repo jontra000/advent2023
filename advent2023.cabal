@@ -27,6 +27,7 @@ library
   exposed-modules:
       Lib
       P1
+      P2
   other-modules:
       Paths_advent2023
   autogen-modules:
@@ -36,6 +37,8 @@ library
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       base >=4.7 && <5
+    , containers
+    , split
   default-language: Haskell2010
 
 executable advent2023-exe
@@ -50,6 +53,8 @@ executable advent2023-exe
   build-depends:
       advent2023
     , base >=4.7 && <5
+    , containers
+    , split
   default-language: Haskell2010
 
 test-suite advent2023-test
@@ -65,4 +70,6 @@ test-suite advent2023-test
   build-depends:
       advent2023
     , base >=4.7 && <5
+    , containers
+    , split
   default-language: Haskell2010
