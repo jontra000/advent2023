@@ -1,9 +1,13 @@
 module P2 (run1, run2, inputLocation) where
 
-import Data.List (isPrefixOf)
+import qualified Data.Map as M
+import Data.Maybe (mapMaybe)
 
-data CubeSet = CubeSet Int Int Int -- red, green, blue
-    
+type CubeSet = M.Map Char Int
+data Draw = Draw Char Int
+data Game = Game { gameId :: Int, gameDraws :: [Draw] }
+type Input = [Game]
+
 run1 :: String -> Int
 run1 = solve1 . parse
 
@@ -13,35 +17,43 @@ run2 = solve2 . parse
 inputLocation :: String
 inputLocation = "inputs/input2"
 
-parse :: String -> [String]
-parse = lines
+parse :: String -> Input
+parse = map (parseGame . words) . lines
 
-solve1 :: [String] -> Int
-solve1 = sum . map (checkPossible . reverse . words)
+parseGame :: [String] -> Game
+parseGame (_:gameStr:res) = Game (parseGameId gameStr) (parseDraws res)
+parseGame x = error ("Malformed game string: " ++ unwords x)
 
-checkPossible :: [String] -> Int
-checkPossible [idStr,_] = read (init idStr)
-checkPossible (colour:amount:res)
-    | "red" `isPrefixOf` colour && (read amount > 12) = 0
-    | "green" `isPrefixOf` colour && (read amount > 13) = 0
-    | "blue" `isPrefixOf` colour && (read amount > 14) = 0
-    | otherwise = checkPossible res
-checkPossible x = error ("bad tokens: " ++ unwords x)
+parseGameId :: String -> Int
+parseGameId = read . init
 
-solve2 :: [String] -> Int
+parseDraws :: [String] -> [Draw]
+parseDraws (amountStr:colourStr:res) = parseDraw amountStr colourStr : parseDraws res
+parseDraws _ = []
+
+parseDraw :: String -> String -> Draw
+parseDraw amountStr colourStr = Draw (head colourStr) (read amountStr)
+
+solve1 :: Input -> Int
+solve1 = sum . map gameId . filter checkPossible
+
+checkPossible :: Game -> Bool
+checkPossible (Game _ draws) = all isPossible draws
+
+isPossible :: Draw -> Bool
+isPossible (Draw 'r' amount) = amount <= 12
+isPossible (Draw 'g' amount) = amount <= 13
+isPossible (Draw 'b' amount) = amount <= 14
+isPossible _ = True
+
+solve2 :: Input -> Int
 solve2 = sum . map gamePower
 
-gamePower :: String -> Int
-gamePower = power . minimumCubeSet (CubeSet 0 0 0) . reverse . words
+gamePower :: Game -> Int
+gamePower = power . minimumCubeSet . gameDraws
 
-minimumCubeSet :: CubeSet -> [String] -> CubeSet
-minimumCubeSet cubeSet [_, _] = cubeSet
-minimumCubeSet (CubeSet red green blue) (colour:amount:res)
-    | "red" `isPrefixOf` colour = minimumCubeSet (CubeSet (max red (read amount)) green blue) res
-    | "green" `isPrefixOf` colour =  minimumCubeSet (CubeSet red (max (read amount) green) blue) res
-    | "blue" `isPrefixOf` colour = minimumCubeSet (CubeSet red green (max (read amount) blue)) res
-    | otherwise = error ("bad colour: " ++ colour)
-minimumCubeSet cubeSet _ = cubeSet
+minimumCubeSet :: [Draw] -> CubeSet
+minimumCubeSet = M.fromListWith max . map (\(Draw colour amount) -> (colour, amount))
 
 power :: CubeSet -> Int
-power (CubeSet red green blue) = red * green * blue
+power cubeSet = product $ mapMaybe (`M.lookup` cubeSet) "rgb"
