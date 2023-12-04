@@ -1,9 +1,9 @@
 module P4 (run1, run2, inputLocation) where
 
 import Data.Char (isDigit)
-import qualified Data.Map as M
 
 type Input = [Card]
+type CopiesWins = (Int, Int)
 
 data Card = Card [Int] [Int] -- winning numbers, my numbers
 
@@ -26,7 +26,10 @@ stripCardId :: String -> String
 stripCardId = tail . dropWhile (/= ':')
 
 parseCard :: String -> Card
-parseCard = makeCard . mapTuple (map read . words . removeSeparator) . break (=='|')
+parseCard = makeCard . mapTuple parseNumberList . break (=='|')
+
+parseNumberList :: String -> [Int]
+parseNumberList = map read . words . removeSeparator
 
 removeSeparator :: String -> String
 removeSeparator = dropWhile (not . isDigit)
@@ -41,7 +44,7 @@ solve1 :: Input -> Int
 solve1 = sum . map (score . winningNumbers)
 
 winningNumbers :: Card -> Int
-winningNumbers (Card winners ours)= length $ filter (`elem` winners) ours
+winningNumbers (Card winners ours) = length $ filter (`elem` winners) ours
 
 score :: Int -> Int
 score x 
@@ -49,20 +52,19 @@ score x
     | otherwise = 2^(x-1)
 
 solve2 :: Input -> Int
-solve2 input = countCards $ foldl winCopies (M.fromList (zip [0..(length input - 1)] (repeat 1))) (zip [0..] input)
+solve2 = countCards . zip (repeat 1) . map winningNumbers
 
-winCopies :: M.Map Int Int -> (Int, Card) -> M.Map Int Int
-winCopies copies (i, card) =
-    let points = winningNumbers card
-        copyIndices = [i+1..i+points]
-        winnings = copies M.! i
-    in  addCopies winnings copies copyIndices
+countCards :: [CopiesWins] -> Int
+countCards [] = 0
+countCards ((copies, wins):res) =
+    let res' = updateCopies res copies wins
+    in  copies + countCards res'
 
-addCopies :: Int -> M.Map Int Int -> [Int] -> M.Map Int Int
-addCopies winnings = foldl (addCopy winnings)
+updateCopies :: [CopiesWins] -> Int -> Int -> [CopiesWins]
+updateCopies copies count wins =
+    let (toUpdate, res) = splitAt wins copies
+        toUpdate' = map (addCopies count) toUpdate
+    in  toUpdate' ++ res
 
-addCopy :: Int -> M.Map Int Int -> Int -> M.Map Int Int
-addCopy winnings copies i = M.adjust (+winnings) i copies
-
-countCards :: M.Map Int Int -> Int
-countCards = sum . M.elems
+addCopies :: Int -> CopiesWins -> CopiesWins
+addCopies newCopies (oldCopies, wins) = (oldCopies + newCopies, wins)
