@@ -30,6 +30,7 @@ library
       P2
       P3
       P4
+      P5
   other-modules:
       Paths_advent2023
   autogen-modules:
