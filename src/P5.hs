@@ -43,48 +43,65 @@ solve1 :: Input -> Int
 solve1 = minimum . seedLocations
 
 seedLocations :: Input -> [Int]
-seedLocations (Input seeds mappings) = map (seedLocation mappings) seeds
+seedLocations (Input seeds mappings) = map (applyMappings mappings) seeds
 
-seedLocation :: [Mapping] -> Int -> Int
-seedLocation mapping seed = foldl applyMapping seed mapping
+applyMappings :: [Mapping] -> Int -> Int
+applyMappings mapping seed = foldl applyMapping seed mapping
 
 applyMapping :: Int -> [Range] -> Int
-applyMapping seed [] = seed
-applyMapping seed ((Range destStart sourceStart rangeLength):ranges)
-    | seed >= sourceStart && seed < sourceStart + rangeLength = destStart + seed - sourceStart
-    | otherwise = applyMapping seed ranges
+applyMapping x [] = x
+applyMapping x ((Range destStart sourceStart rangeLength):ranges)
+    | inRange sourceStart rangeLength x = translateRange sourceStart destStart x
+    | otherwise = applyMapping x ranges
+
+inRange :: Int -> Int -> Int -> Bool
+inRange sourceStart rangeLength x = x >= sourceStart && x < sourceStart + rangeLength
+
+translateRange :: Int -> Int -> Int -> Int
+translateRange sourceStart destStart x = destStart + x - sourceStart
 
 solve2 :: Input -> Int
-solve2 = solveBackwards 0 . transformSeedRanges
+solve2 = solveBackwards 0 . reverseMappings
 
-transformSeedRanges :: Input -> Input
-transformSeedRanges (Input seeds mappings) = Input seeds (reverse mappings)
+reverseMappings :: Input -> Input
+reverseMappings (Input seeds mappings) = Input seeds (reverse mappings)
 
 solveBackwards :: Int -> Input -> Int
 solveBackwards guess input@(Input seeds mappings) =
-    let ReverseMappingResult result toSkip = reverseMappings mappings guess
-    in  if isInSeedRange seeds result
+    let ReverseMappingResult result toSkip = applyMappingsReversed mappings guess
+    in  if isSeed result seeds
         then guess
         else solveBackwards (guess + toSkip) input
 
-isInSeedRange :: [Int] -> Int -> Bool
-isInSeedRange (start:rangeLength:res) x = (x >= start && x < start + rangeLength) || isInSeedRange res x
-isInSeedRange _ _ = False 
+isSeed :: Int -> [Int] -> Bool
+isSeed x = any (inSeedRange x) . chunkPairs
 
-reverseMappings :: [Mapping] -> Int -> ReverseMappingResult
-reverseMappings mapping x = foldl applyMappingReverse (ReverseMappingResult x maxBound) mapping
+inSeedRange :: Int -> (Int, Int) -> Bool
+inSeedRange x (start, rangeLength) = inRange start rangeLength x
+
+chunkPairs :: [a] -> [(a,a)]
+chunkPairs (x:y:res) = (x,y) : chunkPairs res
+chunkPairs _ = []
+
+applyMappingsReversed :: [Mapping] -> Int -> ReverseMappingResult
+applyMappingsReversed mapping x = foldl applyMappingReverse (ReverseMappingResult x maxBound) mapping
 
 applyMappingReverse :: ReverseMappingResult -> [Range] -> ReverseMappingResult
 applyMappingReverse (ReverseMappingResult x toSkip) ranges =
     let (lowerRanges, upperRanges) = span (\(Range start _ _) -> start <= x) ranges
         toSkip' = min toSkip (rangeDistance x upperRanges)
-    in  case reverse lowerRanges of
-            [] -> ReverseMappingResult x toSkip'
-            ((Range rangeStart mapStart rangeLength):_) -> 
-                if x < rangeStart + rangeLength
-                then ReverseMappingResult (mapStart + x - rangeStart) (min toSkip (rangeStart + rangeLength - x))
-                else ReverseMappingResult x toSkip'
+    in  applyMappingReverse' x toSkip' lowerRanges
+
+applyMappingReverse' :: Int -> Int -> [Range] -> ReverseMappingResult
+applyMappingReverse' x toSkip [] =  ReverseMappingResult x toSkip
+applyMappingReverse' x toSkip lowerRanges
+    | x < sourceStart + rangeLength = ReverseMappingResult x' toSkip'
+    | otherwise = ReverseMappingResult x toSkip
+    where Range sourceStart destStart rangeLength = last lowerRanges
+          x' = translateRange sourceStart destStart x
+          distanceToRangeEnd = sourceStart + rangeLength - x
+          toSkip' = min toSkip distanceToRangeEnd
 
 rangeDistance :: Int -> [Range] -> Int
 rangeDistance _ [] = maxBound
-rangeDistance x (Range rangeStart _ _:_) = rangeStart - x
+rangeDistance x (Range sourceStart _ _:_) = sourceStart - x
