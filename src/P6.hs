@@ -31,29 +31,15 @@ solve = product . map waysToBeat
 
 waysToBeat :: Race -> Int
 waysToBeat (Race time distance) =
-    let (rootA, rootB) = rawWaysToBeat time distance
-        rootARounded = roundUp rootA
-        rootBRounded = roundDown rootB
+    let (rootA, rootB) = quadratic time (distance + 1)
+        rootARounded = ceiling rootA
+        rootBRounded = floor rootB
     in  rootBRounded - rootARounded + 1
 
-rawWaysToBeat :: Int -> Int -> (Double, Double)
-rawWaysToBeat time distance =
+quadratic :: Int -> Int -> (Double, Double)
+quadratic time distance =
     let root = sqrt $ fromIntegral (time * time - 4 * distance)
     in  ((fromIntegral time - root) / 2.0, (fromIntegral time + root) / 2.0)
-
-roundUp :: Double -> Int
-roundUp x =
-    let x' = ceiling x
-    in  if fromIntegral x' == x
-        then 1 + x'
-        else x'
-
-roundDown :: Double -> Int
-roundDown x =
-    let x'= floor x
-    in  if fromIntegral x' == x
-        then x' - 1
-        else x'
 
 parse2 :: String -> [Race]
 parse2 = map race . zipTwo . map parseRow2 . lines
