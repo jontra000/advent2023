@@ -2,6 +2,7 @@ module P8 (run1, run2, inputLocation) where
 
 import qualified Data.Map as M
 import Data.List (findIndex, elemIndex)
+import Data.Maybe (fromJust)
 
 data Direction = DirectionLeft | DirectionRight 
 type Nodes = M.Map String (String, String)
@@ -32,11 +33,22 @@ parseNodes :: [String] -> Nodes
 parseNodes = M.fromList . map parseNode . tail
 
 parseNode :: String -> (String, (String, String))
-parseNode (a:b:c:_:_:_:_:d:e:f:_:_:g:h:i:_) = ([a,b,c], ([d,e,f],[g,h,i]))
-parseNode _ = error "Bad node definition"
+parseNode s = (parseNodeName s, (parseNodeLeft s, parseNodeRight s))
+
+parseNodeName :: String -> String
+parseNodeName = take 3
+
+parseNodeLeft :: String -> String
+parseNodeLeft = take 3 . drop 7
+
+parseNodeRight :: String -> String
+parseNodeRight = take 3 . drop 12
 
 solve1 :: Input -> Maybe Int
-solve1 (Input directions nodes) = elemIndex "ZZZ" $ scanl (step nodes) "AAA" (cycle directions)
+solve1 = elemIndex "ZZZ" . navigateNetwork "AAA"
+
+navigateNetwork :: String -> Input -> [String]
+navigateNetwork startingNode (Input directions nodes) = scanl (step nodes) startingNode (cycle directions)
 
 step :: Nodes -> String -> Direction -> String
 step nodes location = stepDirection (nodes M.! location)
@@ -46,13 +58,10 @@ stepDirection (left, _) DirectionLeft = left
 stepDirection (_, right) DirectionRight = right
 
 solve2 :: Input -> Int
-solve2 (Input directions nodes) = findCommonCycle $ map (findCycle . \node -> scanl (step nodes) node (cycle directions)) (startingNodes nodes)
+solve2 input@(Input _ nodes) = findCommonCycle $ map (findCycle . (`navigateNetwork` input)) (startingNodes nodes)
 
 findCycle :: [String] -> Int
-findCycle xs =
-    case findIndex endsInZ xs of
-        Just cycleInit -> cycleInit
-        _ -> error "No solution"
+findCycle = fromJust . findIndex endsInZ
 
 endsInZ :: String -> Bool
 endsInZ = (=='Z') . last
