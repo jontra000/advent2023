@@ -1,8 +1,7 @@
 module P11 (run1, run2, inputLocation) where
 
-import qualified Data.Set as S
-
-type Galaxies = S.Set (Int, Int)
+type Coord = (Int, Int)
+type Galaxies = [Coord]
 
 run1 :: String -> Int
 run1 = solve1 . parse
@@ -14,44 +13,56 @@ inputLocation :: String
 inputLocation = "inputs/input11"
 
 parse :: String -> Galaxies
-parse = S.fromList . map fst . filter ((=='#') . snd) . concat . zipWith (\y s -> zipWith (\x c -> ((x,y), c)) [0..] s) [0..] . lines
+parse = parseGalaxies . parseMap
+
+parseGalaxies :: [(Coord, Char)] -> Galaxies
+parseGalaxies = map fst . filter ((=='#') . snd)
+
+parseMap :: String -> [(Coord, Char)]
+parseMap = concat . zipWith parseLine [0..] . lines
+
+parseLine :: Int -> String -> [((Int, Int), Char)]
+parseLine y = zipWith (parseChar y) [0..]
+
+parseChar :: Int -> Int -> Char -> ((Int, Int), Char)
+parseChar y x c = ((x,y), c)
 
 solve1 :: Galaxies -> Int
-solve1 = sum . shortestDistances . S.toList . expand 1
+solve1 = solve 1
 
 solve2 :: Galaxies -> Int
-solve2 = sum . shortestDistances . S.toList . expand 999999
+solve2 = solve 999999
+
+solve :: Int -> Galaxies -> Int
+solve expansion = sum . shortestDistances . expand expansion
 
 expand :: Int -> Galaxies -> Galaxies
 expand expansion galaxies =
-    let yMin = S.findMin $ S.map snd galaxies
-        yMax = S.findMax $ S.map snd galaxies
-        xMin = S.findMin $ S.map fst galaxies
-        xMax = S.findMax $ S.map fst galaxies
-    in  expandRows expansion yMin yMax $ expandColumns expansion xMin xMax galaxies
+    let yMin = minimum $ map snd galaxies
+        yMax = maximum $ map snd galaxies
+        xMin = minimum $ map fst galaxies
+        xMax = maximum $ map fst galaxies
+    in  expandDimension (expandRow expansion) yMin yMax $ expandDimension (expandColumn expansion) xMin xMax galaxies
 
-expandColumns :: Int -> Int -> Int -> Galaxies -> Galaxies
-expandColumns expansion xMin xMax galaxies = foldl (expandColumn expansion) galaxies (reverse [xMin..xMax])
+expandDimension :: (Galaxies -> Int -> Galaxies) -> Int -> Int -> Galaxies -> Galaxies
+expandDimension expandFunction dMin dMax galaxies  = foldl expandFunction galaxies (reverse [dMin..dMax])
 
 expandColumn :: Int -> Galaxies -> Int -> Galaxies
 expandColumn expansion galaxies x =
     if any ((==x) . fst) galaxies
     then galaxies
-    else S.map (expandColumn' expansion x) galaxies
+    else map (expandColumn' expansion x) galaxies
 
 expandColumn' :: Int -> Int -> (Int, Int) -> (Int, Int)
 expandColumn' expansion column c@(x, y)
     | x > column = (x+expansion, y)
     | otherwise = c
 
-expandRows :: Int -> Int -> Int -> Galaxies -> Galaxies
-expandRows expansion yMin yMax galaxies = foldl (expandRow expansion) galaxies (reverse [yMin..yMax])
-
 expandRow :: Int -> Galaxies -> Int -> Galaxies
 expandRow expansion galaxies y =
     if any ((==y) . snd) galaxies
     then galaxies
-    else S.map (expandRow' expansion y) galaxies
+    else map (expandRow' expansion y) galaxies
 
 expandRow' :: Int -> Int -> (Int, Int) -> (Int, Int)
 expandRow' expansion row c@(x,y)
