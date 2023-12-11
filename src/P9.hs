@@ -10,17 +10,24 @@ inputLocation :: String
 inputLocation = "inputs/input9"
 
 parse :: String -> [[Int]]
-parse = map (map read . words) . lines
+parse = map parseLine . lines
+
+parseLine :: String -> [Int]
+parseLine = map read . words
 
 solve1 :: [[Int]] -> Int
 solve1 = sum . map solveLine
 
 solveLine :: [Int] -> Int
-solveLine xs =
-    let diff = zipWith (-) (tail xs) xs
-    in  if all (==0) diff
-        then last xs
-        else last xs + solveLine diff
+solveLine xs = last xs + solveDiff (diff xs)
+
+diff :: [Int] -> [Int]
+diff xs = zipWith (-) (tail xs) xs
+
+solveDiff :: [Int] -> Int
+solveDiff xs
+    | all (==0) xs = 0
+    | otherwise = solveLine xs
 
 solve2 :: [[Int]] -> Int
 solve2 = solve1 . map reverse
