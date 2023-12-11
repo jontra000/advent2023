@@ -38,14 +38,19 @@ startingPosition :: PipeMap -> Coord
 startingPosition = fst . fromJust . find ((=='S') . snd) . M.toList
 
 isLink :: PipeMap -> Coord -> Direction -> Bool
-isLink pipes c DirUp = M.lookup c pipes `elem` [Just '|', Just '7', Just 'F']
-isLink pipes c DirDown = M.lookup c pipes `elem` [Just '|', Just 'J', Just 'L']
-isLink pipes c DirLeft = M.lookup c pipes `elem` [Just '-', Just 'L', Just 'F']
-isLink pipes c DirRight = M.lookup c pipes `elem` [Just '-', Just '7', Just 'J']
+isLink pipes c dir = pipe `elem` connectingPipes dir
+    where c' = move dir c
+          pipe = M.findWithDefault '.' c' pipes
+    
+connectingPipes :: Direction -> [Char]
+connectingPipes DirUp = "|7F"
+connectingPipes DirDown = "|JL"
+connectingPipes DirLeft = "-LF"
+connectingPipes DirRight = "-7J"
 
 startingPipe :: PipeMap -> Coord -> Pipe
 startingPipe pipes c = Pipe c (head links) (toPipe links)
-    where links = filter (\dir -> isLink pipes (move dir c) dir) [DirUp, DirRight, DirDown, DirLeft]
+    where links = filter (isLink pipes c) [DirUp, DirRight, DirDown, DirLeft]
 
 toPipe :: [Direction] -> Char
 toPipe [DirUp, DirRight] = 'L'
@@ -90,37 +95,41 @@ nextDir c DirLeft =
         '-' -> DirLeft
         _ -> error "Bad pipe match"
 
-move :: Direction -> (Int, Int) -> (Int, Int)
+move :: Direction -> Coord -> Coord
 move DirUp = moveUp
 move DirDown = moveDown
 move DirLeft = moveLeft
 move DirRight = moveRight
 
-moveLeft :: (Int, Int) -> (Int, Int)
+moveLeft :: Coord -> Coord
 moveLeft (x,y) = (x-1, y)
 
-moveRight :: (Int, Int) -> (Int, Int)
+moveRight :: Coord -> Coord
 moveRight (x,y) = (x + 1, y)
 
-moveUp :: (Int, Int) -> (Int, Int)
+moveUp :: Coord -> Coord
 moveUp (x,y) = (x, y-1)
 
-moveDown :: (Int, Int) -> (Int, Int)
+moveDown :: Coord -> Coord
 moveDown (x,y) = (x, y+1)
 
 solve2 :: PipeMap -> Int
 solve2 pipes =
     let borderCoords = tunnelSequence pipes
-        filledArea = head $ mapMaybe (\innerNeighbours -> foldl (tryFill innerNeighbours) (Just $ S.fromList (map location borderCoords)) borderCoords) [innerNeighboursLeft, innerNeighboursRight]
+        initialFills = S.fromList (map location borderCoords)
+        filledArea = head $ mapMaybe (tryFill initialFills borderCoords) [innerNeighboursLeft, innerNeighboursRight]
     in  length filledArea - length borderCoords
 
 location :: Pipe -> Coord
 location (Pipe c _ _) = c
 
-tryFill :: (Direction -> Char -> (Int, Int) -> [(Int, Int)]) -> Maybe (S.Set (Int, Int)) -> Pipe -> Maybe (S.Set (Int, Int))
-tryFill innerNeighbours countedCoords (Pipe c dir pipe) = foldl flood countedCoords (innerNeighbours dir pipe c)
+tryFill :: S.Set Coord -> [Pipe] -> (Direction -> Char -> Coord -> [Coord]) -> Maybe (S.Set Coord)
+tryFill filledCoords pipes innerNeighbours = foldl (tryFillLocation innerNeighbours) (Just filledCoords) pipes
 
-innerNeighboursLeft :: Direction -> Char -> (Int, Int) -> [(Int, Int)]
+tryFillLocation :: (Direction -> Char -> Coord -> [Coord]) -> Maybe (S.Set Coord) -> Pipe -> Maybe (S.Set Coord)
+tryFillLocation innerNeighbours countedCoords (Pipe c dir pipe) = foldl flood countedCoords (innerNeighbours dir pipe c)
+
+innerNeighboursLeft :: Direction -> Char -> Coord -> [Coord]
 innerNeighboursLeft DirDown '7' c = [moveUp c, moveRight c]
 innerNeighboursLeft DirLeft '7' _ = []
 innerNeighboursLeft DirRight 'F' c = [moveUp c, moveLeft c]
@@ -135,7 +144,7 @@ innerNeighboursLeft DirLeft '-' c = [moveDown c]
 innerNeighboursLeft DirRight '-' c = [moveUp c]
 innerNeighboursLeft dir c _ = error ("Bad pipe connection: " ++ show c ++ " " ++ show dir)
 
-innerNeighboursRight :: Direction -> Char -> (Int, Int) -> [(Int, Int)]
+innerNeighboursRight :: Direction -> Char -> Coord -> [Coord]
 innerNeighboursRight DirLeft '7' c = [moveUp c, moveRight c]
 innerNeighboursRight DirDown '7' _ = []
 innerNeighboursRight DirDown 'F' c = [moveUp c, moveLeft c]
@@ -150,9 +159,9 @@ innerNeighboursRight DirRight '-' c = [moveDown c]
 innerNeighboursRight DirLeft '-' c = [moveUp c]
 innerNeighboursRight dir c _ = error ("Bad pipe connection: " ++ show c ++ " " ++ show dir)
 
-flood :: Maybe (S.Set (Int, Int)) -> (Int, Int) -> Maybe (S.Set (Int, Int))
+flood :: Maybe (S.Set Coord) -> Coord -> Maybe (S.Set Coord)
 flood Nothing _ = Nothing
 flood (Just filledCoords) c@(x,y)
     | x < 0 || y < 0 || x > 142 || y > 142 = Nothing
     | S.member c filledCoords = Just filledCoords
-    | otherwise = foldl flood (Just (S.insert c filledCoords)) ([moveLeft c, moveRight c, moveUp c, moveDown c] ++ [(x-1,y-1), (x+1, y-1), (x-1,y+1),(x+1,y+1)])
+    | otherwise = foldl flood (Just (S.insert c filledCoords)) [moveLeft c, moveRight c, moveUp c, moveDown c]
