@@ -2,11 +2,13 @@ module P10 (run1, run2, inputLocation) where
 
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Data.List (findIndex, find)
+import Data.List (find)
 import Data.Maybe (fromJust)
 
-type PipeMap = M.Map (Int, Int) Char
+type Coord = (Int, Int)
+type PipeMap = M.Map Coord Char
 data Direction = DirUp | DirDown | DirLeft | DirRight deriving Show
+data Pipe = Pipe Coord Direction Char
 
 run1 :: String -> Int
 run1 = solve1 . parse
@@ -21,58 +23,78 @@ parse :: String -> PipeMap
 parse = M.fromList . concatMap (\(y, line) -> zipWith (\x c -> ((x,y),c)) [0..] line) . zip [0..] . lines 
 
 solve1 :: PipeMap -> Int
-solve1 = furthestDistance . tunnelLength
--- solve1 pipes = take 10 $ map (fst) $ tunnelSequence pipes
+solve1 = maxDistance . length . tunnelSequence
 
-tunnelLength :: PipeMap -> Int
-tunnelLength pipes = fromJust $ findIndex ((=='S') . (pipes M.!) . fst) $ tunnelSequence pipes
+maxDistance :: Int -> Int
+maxDistance tunnelLength = tunnelLength `div` 2 + tunnelLength `mod` 2
 
-tunnelSequence :: PipeMap -> [((Int, Int), Direction)]
-tunnelSequence pipes = iterate (nextPipe pipes) (initialStep pipes)
+tunnelSequence :: PipeMap -> [Pipe]
+tunnelSequence pipes = nextPipe pipes (initialStep pipes)
 
-initialStep :: PipeMap -> ((Int, Int), Direction)
-initialStep pipes = getNeighbour pipes $ startingPosition pipes
+initialStep :: PipeMap -> Pipe
+initialStep pipes = startingPipe pipes $ startingPosition pipes
 
-startingPosition :: PipeMap -> (Int, Int)
+startingPosition :: PipeMap -> Coord
 startingPosition = fst . fromJust . find ((=='S') . snd) . M.toList
 
-getNeighbour :: PipeMap -> (Int, Int) -> ((Int, Int), Direction)
-getNeighbour pipes = fromJust . find (isLink pipes) . neighbourCoords
+isLink :: PipeMap -> Coord -> Direction -> Bool
+isLink pipes c DirUp = M.lookup c pipes `elem` [Just '|', Just '7', Just 'F']
+isLink pipes c DirDown = M.lookup c pipes `elem` [Just '|', Just 'J', Just 'L']
+isLink pipes c DirLeft = M.lookup c pipes `elem` [Just '-', Just 'L', Just 'F']
+isLink pipes c DirRight = M.lookup c pipes `elem` [Just '-', Just '7', Just 'J']
 
-neighbourCoords :: (Int, Int) -> [((Int, Int), Direction)]
-neighbourCoords (x,y) = [((x, y-1), DirUp), ((x+1,y), DirRight), ((x,y+1), DirDown), ((x-1, y), DirLeft)]
+startingPipe :: PipeMap -> Coord -> Pipe
+startingPipe pipes c = Pipe c (head links) (toPipe links)
+    where links = filter (\dir -> isLink pipes (move dir c) dir) [DirUp, DirRight, DirDown, DirLeft]
 
-isLink :: PipeMap -> ((Int, Int), Direction) -> Bool
-isLink pipes (c, DirUp) = M.lookup c pipes `elem` [Just '|', Just '7', Just 'F']
-isLink pipes (c, DirDown) = M.lookup c pipes `elem` [Just '|', Just 'J', Just 'L']
-isLink pipes (c, DirLeft) = M.lookup c pipes `elem` [Just '-', Just 'L', Just 'F']
-isLink pipes (c, DirRight) = M.lookup c pipes `elem` [Just '-', Just '7', Just 'J']
+toPipe :: [Direction] -> Char
+toPipe [DirUp, DirRight] = 'L'
+toPipe [DirUp, DirDown] = '|'
+toPipe [DirUp, DirLeft] = 'J'
+toPipe [DirRight, DirDown] = 'F'
+toPipe [DirRight, DirLeft] = '-'
+toPipe [DirDown, DirLeft] = '7'
+toPipe _ = error "bad pipe connections" 
 
-nextPipe :: PipeMap -> ((Int, Int), Direction) -> ((Int, Int), Direction)
-nextPipe pipes (c, DirUp) =
-    case pipes M.! c of
-        '7' -> (moveLeft c, DirLeft)
-        'F' -> (moveRight c, DirRight)
-        '|' -> (moveUp c, DirUp)
+nextPipe :: PipeMap -> Pipe -> [Pipe]
+nextPipe pipes prev@(Pipe c dir _)
+    | pipe == 'S' = [prev]
+    | otherwise = prev : nextPipe pipes next    
+    where c' = move dir c
+          pipe = pipes M.! c'
+          next = Pipe c' (nextDir pipe dir) pipe
+
+nextDir :: Char -> Direction -> Direction
+nextDir c DirUp =
+    case c of
+        '7' -> DirLeft
+        'F' -> DirRight
+        '|' -> DirUp
         _ -> error "Bad pipe match"
-nextPipe pipes (c, DirDown) =
-    case pipes M.! c of
-        '|' -> (moveDown c, DirDown)
-        'J' -> (moveLeft c, DirLeft)
-        'L' -> (moveRight c, DirRight)
+nextDir c DirDown =
+    case c of
+        '|' -> DirDown
+        'J' -> DirLeft
+        'L' -> DirRight
         _ -> error "Bad pipe match"
-nextPipe pipes (c, DirRight) =
-    case pipes M.! c of
-        '7' -> (moveDown c, DirDown)
-        'J' -> (moveUp c, DirUp)
-        '-' -> (moveRight c, DirRight)
+nextDir c DirRight =
+    case c of
+        '7' -> DirDown
+        'J' -> DirUp
+        '-' -> DirRight
         _ -> error "Bad pipe match"
-nextPipe pipes (c, DirLeft) =
-    case pipes M.! c of
-        'L' -> (moveUp c, DirUp)
-        'F' -> (moveDown c, DirDown)
-        '-' -> (moveLeft c, DirLeft)
+nextDir c DirLeft =
+    case c of
+        'L' -> DirUp
+        'F' -> DirDown
+        '-' -> DirLeft
         _ -> error "Bad pipe match"
+
+move :: Direction -> (Int, Int) -> (Int, Int)
+move DirUp = moveUp
+move DirDown = moveDown
+move DirLeft = moveLeft
+move DirRight = moveRight
 
 moveLeft :: (Int, Int) -> (Int, Int)
 moveLeft (x,y) = (x-1, y)
@@ -86,38 +108,31 @@ moveUp (x,y) = (x, y-1)
 moveDown :: (Int, Int) -> (Int, Int)
 moveDown (x,y) = (x, y+1)
 
-furthestDistance :: Int -> Int
-furthestDistance x = (x+1) `div` 2
-
 solve2 :: PipeMap -> Int
 solve2 pipes =
-    let borderRepeating = tunnelSequence pipes
-        borderLength = 1 + fromJust (findIndex ((=='S') . (pipes M.!) . fst) borderRepeating)
-        borderCoords = take borderLength borderRepeating
-        filledArea = foldl tryFill (S.fromList (map fst borderCoords)) (map (addPipe pipes) borderCoords)
-    in  length filledArea - borderLength
-    -- in  plot filledArea
+    let borderCoords = tunnelSequence pipes
+        filledArea = foldl tryFill (S.fromList (map location borderCoords)) borderCoords
+    in  length filledArea - length borderCoords
 
-addPipe :: PipeMap -> ((Int, Int), Direction) -> ((Int, Int), Direction, Char)
-addPipe pipes (c, dir) = (c, dir, pipes M.! c)
+location :: Pipe -> Coord
+location (Pipe c _ _) = c
 
-tryFill :: S.Set (Int, Int) -> ((Int, Int), Direction, Char) -> S.Set (Int, Int)
-tryFill countedCoords (c, dir, pipe) = foldl flood countedCoords (innerNeighbours dir pipe c)
+tryFill :: S.Set (Int, Int) -> Pipe -> S.Set (Int, Int)
+tryFill countedCoords (Pipe c dir pipe) = foldl flood countedCoords (innerNeighbours dir pipe c)
 
 innerNeighbours :: Direction -> Char -> (Int, Int) -> [(Int, Int)]
-innerNeighbours DirRight '7' c = [moveUp c, moveRight c]
-innerNeighbours DirUp '7' _ = []
-innerNeighbours DirUp 'F' c = [moveUp c, moveLeft c]
-innerNeighbours DirLeft 'F' _ = []
-innerNeighbours DirDown 'J' c = [moveRight c, moveDown c]
-innerNeighbours DirRight 'J' _ = []
-innerNeighbours DirDown 'L' _ = []
-innerNeighbours DirLeft 'L' c = [moveDown c, moveLeft c]
+innerNeighbours DirDown '7' c = [moveUp c, moveRight c]
+innerNeighbours DirLeft '7' _ = []
+innerNeighbours DirRight 'F' c = [moveUp c, moveLeft c]
+innerNeighbours DirDown 'F' _ = []
+innerNeighbours DirLeft 'J' c = [moveRight c, moveDown c]
+innerNeighbours DirUp 'J' _ = []
+innerNeighbours DirRight 'L' _ = []
+innerNeighbours DirUp 'L' c = [moveDown c, moveLeft c]
 innerNeighbours DirDown '|' c = [moveRight c]
 innerNeighbours DirUp '|' c = [moveLeft c]
 innerNeighbours DirLeft '-' c = [moveDown c]
 innerNeighbours DirRight '-' c = [moveUp c]
-innerNeighbours _ 'S' _ = []
 innerNeighbours dir c _ = error ("Bad pipe connection: " ++ show c ++ " " ++ show dir)
 
 flood :: S.Set (Int, Int) -> (Int, Int) -> S.Set (Int, Int)
