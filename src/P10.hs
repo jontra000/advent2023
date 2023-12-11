@@ -3,7 +3,7 @@ module P10 (run1, run2, inputLocation) where
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.List (find)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, mapMaybe)
 
 type Coord = (Int, Int)
 type PipeMap = M.Map Coord Char
@@ -111,32 +111,48 @@ moveDown (x,y) = (x, y+1)
 solve2 :: PipeMap -> Int
 solve2 pipes =
     let borderCoords = tunnelSequence pipes
-        filledArea = foldl tryFill (S.fromList (map location borderCoords)) borderCoords
+        filledArea = head $ mapMaybe (\innerNeighbours -> foldl (tryFill innerNeighbours) (Just $ S.fromList (map location borderCoords)) borderCoords) [innerNeighboursLeft, innerNeighboursRight]
     in  length filledArea - length borderCoords
 
 location :: Pipe -> Coord
 location (Pipe c _ _) = c
 
-tryFill :: S.Set (Int, Int) -> Pipe -> S.Set (Int, Int)
-tryFill countedCoords (Pipe c dir pipe) = foldl flood countedCoords (innerNeighbours dir pipe c)
+tryFill :: (Direction -> Char -> (Int, Int) -> [(Int, Int)]) -> Maybe (S.Set (Int, Int)) -> Pipe -> Maybe (S.Set (Int, Int))
+tryFill innerNeighbours countedCoords (Pipe c dir pipe) = foldl flood countedCoords (innerNeighbours dir pipe c)
 
-innerNeighbours :: Direction -> Char -> (Int, Int) -> [(Int, Int)]
-innerNeighbours DirDown '7' c = [moveUp c, moveRight c]
-innerNeighbours DirLeft '7' _ = []
-innerNeighbours DirRight 'F' c = [moveUp c, moveLeft c]
-innerNeighbours DirDown 'F' _ = []
-innerNeighbours DirLeft 'J' c = [moveRight c, moveDown c]
-innerNeighbours DirUp 'J' _ = []
-innerNeighbours DirRight 'L' _ = []
-innerNeighbours DirUp 'L' c = [moveDown c, moveLeft c]
-innerNeighbours DirDown '|' c = [moveRight c]
-innerNeighbours DirUp '|' c = [moveLeft c]
-innerNeighbours DirLeft '-' c = [moveDown c]
-innerNeighbours DirRight '-' c = [moveUp c]
-innerNeighbours dir c _ = error ("Bad pipe connection: " ++ show c ++ " " ++ show dir)
+innerNeighboursLeft :: Direction -> Char -> (Int, Int) -> [(Int, Int)]
+innerNeighboursLeft DirDown '7' c = [moveUp c, moveRight c]
+innerNeighboursLeft DirLeft '7' _ = []
+innerNeighboursLeft DirRight 'F' c = [moveUp c, moveLeft c]
+innerNeighboursLeft DirDown 'F' _ = []
+innerNeighboursLeft DirLeft 'J' c = [moveRight c, moveDown c]
+innerNeighboursLeft DirUp 'J' _ = []
+innerNeighboursLeft DirRight 'L' _ = []
+innerNeighboursLeft DirUp 'L' c = [moveDown c, moveLeft c]
+innerNeighboursLeft DirDown '|' c = [moveRight c]
+innerNeighboursLeft DirUp '|' c = [moveLeft c]
+innerNeighboursLeft DirLeft '-' c = [moveDown c]
+innerNeighboursLeft DirRight '-' c = [moveUp c]
+innerNeighboursLeft dir c _ = error ("Bad pipe connection: " ++ show c ++ " " ++ show dir)
 
-flood :: S.Set (Int, Int) -> (Int, Int) -> S.Set (Int, Int)
-flood filledCoords c@(x,y) =
-    if S.member c filledCoords || x < 0 || y < 0 || x > 142 || y > 142
-    then filledCoords
-    else foldl flood (S.insert c filledCoords) ([moveLeft c, moveRight c, moveUp c, moveDown c] ++ [(x-1,y-1), (x+1, y-1), (x-1,y+1),(x+1,y+1)])
+innerNeighboursRight :: Direction -> Char -> (Int, Int) -> [(Int, Int)]
+innerNeighboursRight DirLeft '7' c = [moveUp c, moveRight c]
+innerNeighboursRight DirDown '7' _ = []
+innerNeighboursRight DirDown 'F' c = [moveUp c, moveLeft c]
+innerNeighboursRight DirRight 'F' _ = []
+innerNeighboursRight DirUp 'J' c = [moveRight c, moveDown c]
+innerNeighboursRight DirLeft 'J' _ = []
+innerNeighboursRight DirUp 'L' _ = []
+innerNeighboursRight DirRight 'L' c = [moveDown c, moveLeft c]
+innerNeighboursRight DirUp '|' c = [moveRight c]
+innerNeighboursRight DirDown '|' c = [moveLeft c]
+innerNeighboursRight DirRight '-' c = [moveDown c]
+innerNeighboursRight DirLeft '-' c = [moveUp c]
+innerNeighboursRight dir c _ = error ("Bad pipe connection: " ++ show c ++ " " ++ show dir)
+
+flood :: Maybe (S.Set (Int, Int)) -> (Int, Int) -> Maybe (S.Set (Int, Int))
+flood Nothing _ = Nothing
+flood (Just filledCoords) c@(x,y)
+    | x < 0 || y < 0 || x > 142 || y > 142 = Nothing
+    | S.member c filledCoords = Just filledCoords
+    | otherwise = foldl flood (Just (S.insert c filledCoords)) ([moveLeft c, moveRight c, moveUp c, moveDown c] ++ [(x-1,y-1), (x+1, y-1), (x-1,y+1),(x+1,y+1)])
