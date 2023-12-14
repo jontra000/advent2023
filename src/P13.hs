@@ -1,6 +1,6 @@
 module P13 (run1, run2, inputLocation) where
 import Data.List.Split (splitOn)
-import Data.List (elemIndex, transpose)
+import Data.List (transpose, find)
 import Data.Maybe (fromMaybe)
 
 run1 :: String -> Int
@@ -16,41 +16,33 @@ parse :: String -> [[String]]
 parse = splitOn [""] . lines
 
 solve1 :: [[String]] -> Int
-solve1 = sum . map solveNote
+solve1 = sum . map (summarise 0)
 
 solve2 :: [[String]] -> Int
-solve2 = sum . map solveNote2
+solve2 = sum . map (summarise 1)
 
-solveNote2 :: [String] -> Int
-solveNote2 note = 100 * solveNote2' note + solveNote2' (transpose note)
+summarise :: Int -> [String] -> Int
+summarise errors note = summariseHorizontal errors note + summariseVertical errors note
 
-solveNote2' :: [String] -> Int
-solveNote2' note = (1+) $ fromMaybe (-1) $ elemIndex 1 $ map (isSmudgedReflection note) [1..(length note)]
+summariseHorizontal :: Int -> [String] -> Int
+summariseHorizontal errors = (100 *) . findReflection' errors
 
-solveNote :: [String] -> Int
-solveNote note = 100 * solveVertical note + solveHorizontal note
+summariseVertical :: Int -> [String] -> Int
+summariseVertical errors = findReflection' errors . transpose
 
-solveVertical :: [String] -> Int
-solveVertical note = isReflection note 1
+findReflection' :: Int -> [String] -> Int
+findReflection' errors note = fromMaybe 0 $ find (reflectionHasErrors errors note) [1..(length note - 1)]
 
-solveHorizontal :: [String] -> Int
-solveHorizontal = solveVertical . transpose
+reflectionHasErrors :: Int -> [String] -> Int -> Bool
+reflectionHasErrors errors note = (==errors) . reflectionErrors note
 
-isReflection :: [String] -> Int -> Int
-isReflection note i
-    | i == length note = 0
-    | otherwise =
-        let (a, b) = splitAt i note
-        in  if and $ zipWith (==) (reverse a) b
-            then i
-            else isReflection note (i+1)
-
-isSmudgedReflection :: [String] -> Int -> Int
-isSmudgedReflection note i
-    | i == length note = 0
-    | otherwise =
-        let (a, b) = splitAt i note
-        in  errorCount (reverse a) b
+reflectionErrors :: [String] -> Int -> Int
+reflectionErrors note i =
+    let (a, b) = splitAt i note
+    in  errorCount (reverse a) b
 
 errorCount :: [String] -> [String] -> Int
-errorCount a b = length $ filter (==False) $ zipWith (==) (concat a) (concat b)
+errorCount a b = length $ filter (==False) $ matchingChars a b
+
+matchingChars :: [String] -> [String] -> [Bool]
+matchingChars a b = zipWith (==) (concat a) (concat b)
