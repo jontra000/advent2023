@@ -21,19 +21,10 @@ solve2 :: [String] -> Int
 solve2 = load . findCycle [] (1000000000+1) . iterate doCycle
 
 doCycle :: [String] -> [String]
-doCycle = tiltEast . tiltSouth . tiltWest . tiltNorth
+doCycle = tiltAndRotate . tiltAndRotate . tiltAndRotate . tiltAndRotate
 
-tiltNorth :: [String] -> [String]
-tiltNorth = transpose . map tiltRow
-
-tiltWest :: [String] -> [String]
-tiltWest = reverse . transpose . reverse . map tiltRow
-
-tiltSouth :: [String] -> [String]
-tiltSouth = transpose . map tiltRow
-
-tiltEast :: [String] -> [String]
-tiltEast = reverse . transpose . reverse . map tiltRow
+tiltAndRotate :: [String] -> [String]
+tiltAndRotate = reverse .transpose . map tiltRow
 
 tiltRow :: String -> String
 tiltRow = tiltRow' [] []
@@ -48,13 +39,18 @@ tiltRow' xs pending (x:res) = tiltRow' xs (x:pending) res
 findCycle :: Eq a => [a] -> Int -> [a] -> a
 findCycle cache limit (x:xs) = 
     case elemIndex x cache of
-        Just i ->
-            let cycleLength = i+1
-                offset = length cache - cycleLength
-                solutionIndex = (limit - offset) `mod` cycleLength
-            in  cache !! (cycleLength - solutionIndex)
+        Just i -> fastForwardCycle cache limit (i+1)
         Nothing -> findCycle (x:cache) limit xs
 findCycle _ _ [] = error "end of infinite list"
 
+fastForwardCycle :: [a] -> Int -> Int -> a
+fastForwardCycle cache limit cycleLength =
+    let offset = length cache - cycleLength
+        solutionIndex = (limit - offset) `mod` cycleLength
+    in  cache !! (cycleLength - solutionIndex)    
+
 load :: [String] -> Int
-load = sum . concatMap ( map (+1) . elemIndices 'O' . reverse)
+load = sum . map loadRow
+
+loadRow :: String -> Int
+loadRow = sum . map (+1) . elemIndices 'O' . reverse
