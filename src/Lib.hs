@@ -1,4 +1,4 @@
-module Lib (dijkstra, textToCoordMap) where
+module Lib (dijkstra, textToCoordMap, Coord) where
 
 import qualified Data.Map as M
 
