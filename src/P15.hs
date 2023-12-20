@@ -4,7 +4,8 @@ import qualified Data.Map as M
 import Data.List.Split (splitOn)
 import Data.Char (ord)
 
-type State = M.Map Int [(String, Int)]
+type Box = [(String, Int)]
+type State = M.Map Int Box
 
 run1 :: String -> Int
 run1 = solve1 . parse
@@ -25,40 +26,58 @@ hash :: String -> Int
 hash = foldl hashChar 0 
 
 hashChar :: Int -> Char -> Int
-hashChar x c = ((x + ord c) * 17) `mod` 256
+hashChar acc = (`mod` 256) . (*17) . (+ acc) . ord
 
 solve2 :: [String] -> Int
 solve2 = sum . map focusingPower . M.toList . installLenses
 
 installLenses :: [String] -> State
-installLenses = foldl installLens M.empty
+installLenses = foldl (flip installLens) M.empty
 
-installLens :: State -> String -> State
-installLens state command
-    | last command == '-' = removeLens state command
-    | otherwise = addLens state command
+installLens :: String -> State -> State
+installLens command
+    | last command == '-' = removeLens (init command)
+    | otherwise = addLens command
 
-removeLens :: State -> String ->  State
-removeLens state command =
-    let label = init command
-        box = hash label
-    in  M.adjust (filter ((/=label) . fst)) box state
+removeLens :: String -> State -> State
+removeLens label = M.adjust (removeLabel label) box
+    where box = hash label
 
-addLens :: State -> String -> State
-addLens state command =
+removeLabel :: String -> Box -> Box
+removeLabel label = filter ((/=label) . fst)
+
+addLens :: String -> State -> State
+addLens command =
     case break (=='=') command of
-        (label, _:focalLength) ->
-            let box = hash label
-            in  M.alter (addLens' label (read focalLength)) box state
+        (label, _:focalLength) -> addLens' label (read focalLength)
         _ -> error "bad command"
 
-addLens' :: String -> Int -> Maybe [(String, Int)] -> Maybe [(String, Int)]
-addLens' label focalLength (Just existing) =
-    if any ((==label).fst) existing
-    then Just $ map (\old@(label',_) -> if label' == label then (label, focalLength) else old) existing
-    else Just $ (label, focalLength) : existing
-addLens' label focalLength Nothing = Just [(label, focalLength)]
+addLens' :: String -> Int -> State -> State
+addLens' label focalLength = M.alter (Just . alterBox label focalLength) box
+    where box = hash label
 
-focusingPower :: (Int, [(String, Int)]) -> Int
-focusingPower (box, labels) =
-    sum $ zipWith (\i (_,focalLength) -> (box+1) * i * focalLength) [1..] $ reverse labels
+alterBox :: String -> Int -> Maybe Box -> Box
+alterBox label focalLength (Just existing)
+    | labelExists label existing = updateFocalLength label focalLength existing
+    | otherwise = (label, focalLength) : existing
+alterBox label focalLength Nothing = [(label, focalLength)]
+
+labelExists :: String -> Box -> Bool
+labelExists label = any ((==label) . fst)
+
+updateFocalLength :: String -> Int -> Box -> Box
+updateFocalLength label focalLength = map (updateLabel label focalLength)
+
+updateLabel :: String -> Int -> (String, Int) -> (String, Int)
+updateLabel label focalLength old@(label',_)
+    | label' == label = (label, focalLength)
+    | otherwise = old
+
+focusingPower :: (Int, Box) -> Int
+focusingPower (boxIndex, labels) = boxFocusingPower boxIndex labels
+
+boxFocusingPower :: Int -> Box -> Int
+boxFocusingPower boxIndex = sum . zipWith (lensFocusingPower boxIndex) [1..] . reverse
+
+lensFocusingPower :: Int -> Int -> (a, Int) -> Int
+lensFocusingPower boxIndex lensIndex (_, focalLength) = (boxIndex + 1) * lensIndex * focalLength
