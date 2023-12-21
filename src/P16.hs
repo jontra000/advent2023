@@ -2,11 +2,12 @@ module P16 (run1, run2, inputLocation) where
 
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Data.Maybe (isJust)
+import Lib (textToCoordMap)
 
+data Mirror = None | Horizontal | Vertical | TiltRight | TiltLeft
 data Direction = UpDir | DownDir | LeftDir | RightDir deriving (Ord, Eq)
 type Coord = (Int, Int)
-type Input = M.Map Coord Char
+type Input = M.Map Coord Mirror
 type Output = S.Set (Coord, Direction)
 
 run1 :: String -> Int
@@ -19,25 +20,38 @@ inputLocation :: String
 inputLocation = "inputs/input16"
 
 parse :: String -> Input
-parse = M.fromList . concat . zipWith (\y line -> zipWith(\x c -> ((x,y), c)) [0..] line) [0..] . lines
+parse = M.map parseMirror . textToCoordMap
+
+parseMirror :: Char -> Mirror
+parseMirror '-' = Horizontal
+parseMirror '|' = Vertical
+parseMirror '/' = TiltRight
+parseMirror '\\' = TiltLeft
+parseMirror _ = None
 
 solve1 :: Input -> Int
 solve1 = solve (0,0) RightDir
 
 solve :: Coord -> Direction -> Input -> Int
-solve startLoc startDir = length . S.map fst . energise S.empty startLoc startDir
+solve startLoc startDir = energisedCellCount . energise S.empty startLoc startDir
+
+energisedCellCount :: Output -> Int
+energisedCellCount = length . S.map fst
 
 energise :: Output -> Coord -> Direction -> Input -> Output
 energise state loc dir input
     | S.member (loc, dir) state = state
-    | c == Just '/' = rotateSlash state' loc dir input
-    | c == Just '\\' = rotateCounterSlash state' loc dir input
-    | c == Just '-' && (dir == UpDir || dir == DownDir) = move (move state' loc RightDir input) loc LeftDir input
-    | c == Just '|' && (dir == LeftDir || dir == RightDir) = move (move state' loc DownDir input) loc UpDir input
-    | isJust c = move state' loc dir input
-    | otherwise = state
-        where c = M.lookup loc input 
-              state' = S.insert (loc, dir) state
+    | otherwise = maybe state (processCell state' loc dir input) (M.lookup loc input)
+        where state' = S.insert (loc, dir) state
+
+processCell :: Output -> Coord -> Direction -> Input -> Mirror -> Output
+processCell state loc dir input TiltRight = rotateSlash state loc dir input
+processCell state loc dir input TiltLeft = rotateCounterSlash state loc dir input
+processCell state loc UpDir input Horizontal = move (move state loc RightDir input) loc LeftDir input
+processCell state loc DownDir input Horizontal = move (move state loc RightDir input) loc LeftDir input
+processCell state loc LeftDir input Vertical = move (move state loc DownDir input) loc UpDir input
+processCell state loc RightDir input Vertical = move (move state loc DownDir input) loc UpDir input
+processCell state loc dir input _ = move state loc dir input
 
 rotateSlash :: Output -> Coord -> Direction -> Input -> Output
 rotateSlash state loc UpDir input = move state loc RightDir input
