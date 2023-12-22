@@ -4,6 +4,7 @@ module P17 (run1, run2, inputLocation) where
 
 import Lib ( textToCoordMap, Coord )
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Data.List (minimumBy)
 import Data.Maybe (catMaybes)
 import Data.Char (digitToInt)
@@ -29,29 +30,31 @@ parse :: String -> M.Map Coord Int
 parse =  M.map digitToInt . textToCoordMap
 
 solve1 :: M.Map Coord Int -> Int
-solve1 input = dijkstra17 input 1 3 (targetCoord input) (startState $ initState input) ((0,0), Vertical, 0)
+solve1 input = dijkstra17 input 1 3 (targetCoord input) (initState input) (M.fromList [(((0,0), Vertical), 0), (((0,0), Horizontal), 0)]) ((0,0), Vertical, 0)
 
 solve2 :: M.Map Coord Int -> Int
-solve2 input = dijkstra17 input 4 7 (targetCoord input) (startState $ initState input) ((0,0), Vertical, 0)
+solve2 input = dijkstra17 input 4 7 (targetCoord input) (initState input) (M.fromList [(((0,0), Vertical), 0), (((0,0), Horizontal), 0)]) ((0,0), Vertical, 0)
 
 targetCoord :: M.Map Coord Int -> Coord
 targetCoord input = (maximum (map fst (M.keys input)), maximum (map snd (M.keys input)))
 
-initState :: M.Map Coord Int -> M.Map (Coord, Orientation) Int
-initState = M.fromList . concatMap (\loc -> [((loc, orientation), maxBound) | orientation <- [Horizontal, Vertical]]) . M.keys
+initState :: M.Map Coord Int -> S.Set (Coord, Orientation)
+initState = S.fromList . concatMap (\loc -> [(loc, orientation) | orientation <- [Horizontal, Vertical]]) . M.keys . M.delete (0,0)
 
-startState :: M.Map (Coord, Orientation) Int -> M.Map (Coord, Orientation) Int
-startState state = foldl (\state' (k, v) -> M.update (Just . min v) k state') state [(((0,0), Horizontal), 0), (((0,0), Vertical), 0)] 
-
-dijkstra17 :: M.Map Coord Int -> Int -> Int -> Coord -> M.Map (Coord, Orientation) Int -> (Coord, Orientation, Int) -> Int
-dijkstra17 heatMap minMomentum maxMove target state currentNode@(location, orientation, heat)
+dijkstra17 :: M.Map Coord Int -> Int -> Int -> Coord -> S.Set (Coord, Orientation) -> M.Map (Coord, Orientation) Int -> (Coord, Orientation, Int) -> Int
+dijkstra17 heatMap minMomentum maxMove target unvisited reachable (location, orientation, heat)
     | location == target = heat
     | otherwise =
         let directions = turnDirs orientation
-            toUpdate = catMaybes $ concatMap (\direction' -> nextBlocks minMomentum maxMove heatMap location direction' heat) directions
-            state' = updateNeighbours state toUpdate
-            state'' = markVisited state' currentNode
-        in  dijkstra17 heatMap minMomentum maxMove target state'' (getNextNode state'')
+            toUpdate = filter (isUnvisited unvisited reachable) $ catMaybes $ concatMap (\direction' -> nextBlocks minMomentum maxMove heatMap location direction' heat) directions
+            reachable' = updateNeighbours reachable toUpdate
+            reachable'' = M.delete (location, orientation) reachable'
+            unvisited' = markVisited unvisited toUpdate
+        in  dijkstra17 heatMap minMomentum maxMove target unvisited' reachable'' (getNextNode reachable'')
+
+isUnvisited :: S.Set (Coord, Orientation) -> M.Map (Coord, Orientation) a -> (Coord, Orientation, c) -> Bool
+isUnvisited unvisited reachable (coord, orientation, _) = S.member node unvisited || M.member node reachable
+    where node = (coord, orientation)
 
 getNextNode :: M.Map (a, b) Int -> (a, b, Int)
 getNextNode = toNode . minimumBy (compare `on` snd) . M.toList
@@ -59,14 +62,14 @@ getNextNode = toNode . minimumBy (compare `on` snd) . M.toList
 toNode :: ((a, b), c) -> (a, b, c)
 toNode ((location, direction), heat) = (location, direction, heat)
 
-markVisited :: (Ord a1, Ord b) => M.Map (a1, b) a2 -> (a1, b, c) -> M.Map (a1, b) a2
-markVisited state (location, direction, _) = M.delete (location, direction) state
+markVisited :: (Ord a, Ord b) => S.Set (a, b) -> [(a, b, c)] -> S.Set (a, b)
+markVisited state = foldl (flip S.delete) state . map (\(loc, orientation, _) -> (loc, orientation))
 
 updateNeighbours :: M.Map (Coord, Orientation) Int -> [(Coord, Orientation, Int)] -> M.Map (Coord, Orientation) Int
 updateNeighbours = foldl updateNeighbour
 
 updateNeighbour :: M.Map (Coord, Orientation) Int -> (Coord, Orientation, Int) -> M.Map (Coord, Orientation) Int
-updateNeighbour state (location, orientation, heat) = M.update (Just . min heat) (location, orientation) state
+updateNeighbour state (location, orientation, heat) = M.insertWith min (location, orientation) heat state
 
 move :: (Num b, Num a) => Direction -> (a, b) -> (a, b)
 move DirDown (x,y) = (x, y+1)
