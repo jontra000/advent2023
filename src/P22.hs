@@ -1,15 +1,16 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use tuple-section" #-}
 module P22 (run1, run2, inputLocation) where
-import Data.List.Split (splitOn)
 
+import Data.List.Split (splitOn)
 import qualified Data.Set as S
 import qualified Data.Map as M
-import Data.List (sortOn, delete)
+import Data.List (sortOn)
 import Data.Maybe (fromMaybe)
 import Lib (Coord)
 
 type Coord3 = (Int, Int, Int)
+type TopLevel = M.Map Coord Int
 
 run1 :: String -> Int
 run1 = solve1 . parse
@@ -36,55 +37,56 @@ parseCoord :: String -> [Int]
 parseCoord = map read . splitOn ","
 
 parseBrick :: [[Int]] -> [Coord3]
-parseBrick [a@[x1,y1,z1], b@[x2,y2,z2]]
+parseBrick [[x1,y1,z1], [x2,y2,z2]]
     | x1 < x2 = map (\x -> (x, y1, z1)) [x1..x2]
     | y1 < y2 = map (\y -> (x1, y, z1)) [y1..y2]
     | z1 < z2 = map (\z -> (x1, y1, z)) [z1..z2]
-    | x1 == x2 && y1 == y2 && z1 == z2 = [(x1,y1,z1)]
-    | otherwise = error ("non linear brick: " ++ show a ++ " " ++ show b) 
+    | otherwise = [(x1,y1,z1)]
 parseBrick _ = error "bad brick input"
 
 dropBricks :: [S.Set Coord3] -> [S.Set Coord3]
 dropBricks = dropBricks' M.empty
 
-dropBricks' :: M.Map Coord Int -> [S.Set Coord3] -> [S.Set Coord3]
+dropBricks' :: TopLevel -> [S.Set Coord3] -> [S.Set Coord3]
 dropBricks' _ [] = []
 dropBricks' laidBricks (next:bricks) = next' : dropBricks' laidBricks' bricks
-        where next' = dropBrick laidBricks next
-              laidBricks' = updateLaidBricks laidBricks next'
+    where next' = dropBrick laidBricks next
+          laidBricks' = updateTopLevel laidBricks next'
 
-updateLaidBricks :: M.Map Coord Int -> S.Set Coord3 -> M.Map Coord Int
-updateLaidBricks = foldl (\state (x,y,z) -> M.insertWith max (x,y) z state)
+updateTopLevel :: TopLevel -> S.Set Coord3 -> TopLevel
+updateTopLevel = foldl (\state (x,y,z) -> M.insertWith max (x,y) z state)
 
-dropBrick :: M.Map Coord Int -> S.Set Coord3 -> S.Set Coord3
+dropBrick :: TopLevel -> S.Set Coord3 -> S.Set Coord3
 dropBrick laidBricks brick = dropToZ brick $ (+1) $ topZ laidBricks $ horizontalCoords brick
 
 horizontalCoords :: S.Set Coord3 -> S.Set Coord
 horizontalCoords = S.map (\(x,y,_) -> (x,y))
 
-topZ :: M.Map Coord Int -> S.Set Coord -> Int
-topZ laidBricks horizontal = fromMaybe 0 (S.lookupMax (S.map (fromMaybe 0 . (`M.lookup` laidBricks)) horizontal))
+topZ :: TopLevel -> S.Set Coord -> Int
+topZ laidBricks = fromMaybe 0 . S.lookupMax . topZs laidBricks
+
+topZs :: TopLevel -> S.Set Coord -> S.Set Int
+topZs laidBricks = S.map (fromMaybe 0 . (`M.lookup` laidBricks))
 
 dropToZ :: S.Set Coord3 -> Int -> S.Set Coord3
 dropToZ brick z' =
-    let zDiff = z' - minimum (S.map (\(_,_,z) -> z) brick)
-    in  S.map (\(x,y,z) -> (x,y,z+zDiff)) brick
+    let zDiff = z' - minZ brick
+    in  shiftZ zDiff brick
+
+minZ :: S.Set Coord3 -> Int
+minZ =  minimum . S.map (\(_,_,z) -> z)
+
+shiftZ :: Int -> S.Set Coord3 -> S.Set Coord3
+shiftZ zDiff = S.map shiftZ'
+    where shiftZ' (x,y,z) = (x,y,z+zDiff)
 
 sortBricks :: [[Coord3]] -> [S.Set Coord3]
-sortBricks = map S.fromList . sortOn (minimum . map (\(_,_,z) -> z))
-
-disintegrationCount :: [S.Set Coord3] -> Int
-disintegrationCount bricks = length $ filter (canDisintegrate bricks) bricks
-
-canDisintegrate :: [S.Set Coord3] -> S.Set Coord3 -> Bool
-canDisintegrate bricks brick =
-    let bricks' = delete brick bricks
-    in  bricks' == dropBricks bricks' 
+sortBricks = sortOn minZ . map S.fromList
 
 fallCount :: M.Map Coord Int -> [S.Set Coord3] -> [Int]
 fallCount _ [] = []
 fallCount laid (nextBrick:bricks) =
     let bricks' = dropBricks' laid bricks
         droppedCount = length $ filter not $ zipWith (==) bricks bricks'
-        laid' = updateLaidBricks laid nextBrick
+        laid' = updateTopLevel laid nextBrick
     in  droppedCount : fallCount laid' bricks
