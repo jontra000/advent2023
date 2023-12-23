@@ -8,7 +8,11 @@ import Data.Char (isAlpha)
 import Data.List (findIndex, partition)
 import Data.Maybe (fromMaybe)
 
+type Graph = [(String, [String])]
 data Component = Broadcaster [String] | FlipFlop Bool [String] | Conjunction (M.Map String Bool) [String] deriving Show
+type Components = M.Map String Component
+data Signal = Signal Bool String String -- signal target source
+type State = ([Signal], Components)
 
 run1 :: String -> Int
 run1 = solve1 . parse
@@ -19,10 +23,10 @@ run2 = solve2 . parse
 inputLocation :: String
 inputLocation = "inputs/input20"
 
-parse :: String -> M.Map String Component
+parse :: String -> Components
 parse = parseComponents . parseGraph
 
-parseGraph :: String -> [(String, [String])]
+parseGraph :: String -> Graph
 parseGraph = map (parseLine . words) . lines
 
 parseLine :: [String] -> (String, [String])
@@ -32,85 +36,112 @@ parseLine _ = error "bad target"
 parseOutput :: String -> String
 parseOutput = filter isAlpha
 
-parseComponents :: [(String, [String])] -> M.Map String Component
+parseComponents :: Graph -> Components
 parseComponents graph = M.fromList $ map (parseComponent graph) graph
 
-parseComponent :: [(String, [String])] -> (String, [String]) -> (String, Component)
+parseComponent :: Graph -> (String, [String]) -> (String, Component)
 parseComponent _ ("broadcaster", outputs) = ("broadcaster", Broadcaster outputs)
 parseComponent _ ('%':name, outputs) = (name, FlipFlop False outputs)
-parseComponent graph ('&':name, outputs) = (name, Conjunction (graphInputs name graph) outputs)
+parseComponent graph ('&':name, outputs) = (name, Conjunction (initialiseConjunction name graph) outputs)
 parseComponent _ _ = error "bad component"
 
-graphInputs :: String -> [(String, [String])] -> M.Map String Bool
-graphInputs name = M.map (const False) . M.fromList . map (\(k,v) -> (tail k, v)) . filter ((name `elem`) . snd)
+initialiseConjunction :: String -> Graph -> M.Map String Bool
+initialiseConjunction name = initialiseInputs . graphInputs name
 
-solve1 :: M.Map String Component -> Int
-solve1 state = score (iterate pushButton ([], state))
+initialiseInputs :: Graph -> M.Map String Bool
+initialiseInputs = M.fromList . map (\(k,_) -> (tail k, False))
 
-solve2 :: M.Map String Component -> Int
-solve2 state = predictRx state $ map fst $ take 5000 (iterate pushButton ([], state))
+graphInputs :: String -> Graph -> Graph
+graphInputs name = filter ((name `elem`) . snd)
 
-score :: [([(Bool, b1, c)], b2)] -> Int
-score = score' . partition (\(x, _, _) -> x) . concat . take 1001 . map fst
+solve1 :: Components -> Int
+solve1 = score . pushButtonRepeated
+
+solve2 :: Components -> Int
+solve2 state = predictRx state $ pushButtonRepeated state
+
+score :: [[Signal]] -> Int
+score = score' . partition getSignal . concat . take 1000
     where score' (highs, lows) = length highs * length lows
 
-pushButton :: ([(Bool, String, String)], M.Map String Component) -> ([(Bool, String, String)], M.Map String Component)
-pushButton (_, state) = step [(False, "broadcaster", "button")] ([], state)
+getSignal :: Signal -> Bool
+getSignal (Signal x _ _) = x
 
-step :: [(Bool, String, String)] -> ([(Bool, String, String)], M.Map String Component) -> ([(Bool, String, String)], M.Map String Component)
-step [] results = results
-step (s@(signal, target, source):signals) (results, state) =
-    let (outputSignals, newModule) = sendSignal signal source target (state M.! target)
-        state' = M.insert target newModule state
-        results' = s : results
-        signals' = signals ++ outputSignals
-    in  if M.member target state then step signals' (results', state') else step signals (results', state)
+pushButtonRepeated :: Components -> [[Signal]]
+pushButtonRepeated state =
+    let (toProcess, state') = step [Signal False "broadcaster" "button"] ([], state)
+    in  toProcess : pushButtonRepeated state'
 
-sendSignal :: Bool -> String -> String -> Component -> ([(Bool, String, String)], Component)
-sendSignal signal _ target component@(Broadcaster outputs) = (map (\output -> (signal, output, target)) outputs, component)
+step :: [Signal] -> State -> State
+step [] state = state
+step (nextSignal@(Signal signal target source):toProcess) (processedSignals, state) = step toProcess' (processedSignals', state')
+    where   (outputSignals, state') = maybe ([], state) (updateState target state . sendSignal signal source target) (M.lookup target state)
+            processedSignals' = nextSignal : processedSignals
+            toProcess' = toProcess ++ outputSignals
+
+updateState :: String -> Components -> ([Signal], Component) -> State
+updateState target state (signals, component) = (signals, M.insert target component state)
+
+sendSignal :: Bool -> String -> String -> Component -> ([Signal], Component)
+sendSignal signal _ target component@(Broadcaster outputs) = (signalOutputs signal target outputs, component)
 sendSignal True _ _ component@(FlipFlop _ _) = ([], component)
 sendSignal False _ target (FlipFlop signal outputs) =
     let signal' = not signal
-    in  (map (\output -> (signal', output, target)) outputs, FlipFlop signal' outputs)
+    in  (signalOutputs signal' target outputs, FlipFlop signal' outputs)
 sendSignal signal source target (Conjunction inputs outputs) =
     let inputs' = M.insert source signal inputs
         signal' = not $ and (M.elems inputs')
-    in  (map (\output -> (signal', output, target)) outputs, Conjunction inputs' outputs)
+    in  (signalOutputs signal' target outputs, Conjunction inputs' outputs)
 
-predictRx :: M.Map String Component -> [[(Bool, String, String)]] -> Int
-predictRx graph signals  = predictOutput signals graph "rx" False
+signalOutputs :: Bool -> String -> [String] -> [Signal]
+signalOutputs signal input = map (signalOutput signal input)
 
-getInputs :: M.Map b Component -> String -> [b]
-getInputs graph target = map fst $ filter (isInput target . snd) $ M.toList graph
+signalOutput :: Bool -> String -> String -> Signal
+signalOutput signal input output = Signal signal output input
+
+predictRx :: Components -> [[Signal]] -> Int
+predictRx graph toProcess = getCycle toProcess' graph False "rx"
+    where toProcess' = [] : take 5000 toProcess -- include init state for periodicity to be calculated correctly
+          
+getInputs :: String -> Components -> [String]
+getInputs target = map fst . filter (isInput target . snd) . M.toList
 
 isInput :: String -> Component -> Bool
 isInput target (Broadcaster outputs) = target `elem` outputs
 isInput target (FlipFlop _ outputs) = target `elem` outputs
 isInput target (Conjunction _ outputs) = target `elem` outputs
 
-predictOutput :: [[(Bool, String, String)]] -> M.Map String Component -> String -> Bool -> Int
-predictOutput states graph target expected =
-    fromMaybe (
-        case M.lookup target graph of
-            Just (FlipFlop _ _) -> predictOutputFlipFlop states graph target
-            Just (Conjunction _ _) -> predictOutputConjunction states graph target expected
-            Just (Broadcaster _) -> 1
-            Nothing -> predictOutputRx states graph target expected)
-            (checkStates states target expected)
+getCycle :: [[Signal]] -> Components -> Bool -> String -> Int
+getCycle toProcess graph expected target = fromMaybe (predictCycle toProcess graph target expected (M.lookup target graph)) (lookupCycle target expected toProcess)
+    
+predictCycle :: [[Signal]] -> Components -> String -> Bool -> Maybe Component -> Int
+predictCycle toProcess graph target _ (Just (FlipFlop _ _)) = predictOutputFlipFlop toProcess graph target
+predictCycle toProcess graph target expected (Just (Conjunction _ _)) = predictOutputConjunction toProcess graph target expected
+predictCycle _ _ _ _ (Just (Broadcaster _)) = 1
+predictCycle toProcess graph target expected Nothing = predictOutputRx toProcess graph target expected
 
-checkStates :: [[(Bool, String, String)]] -> String -> Bool -> Maybe Int
-checkStates signals target expected = findIndex (any (\(signal, _, target') -> signal == expected && target == target')) signals
+lookupCycle :: String -> Bool -> [[Signal]] -> Maybe Int
+lookupCycle target expected = findIndex (any (signalMatches expected target))
 
-predictOutputFlipFlop :: [[(Bool, String, String)]] -> M.Map String Component -> String -> Int
-predictOutputFlipFlop states graph name = 2 * minimum (map (\input -> predictOutput states graph input False) inputs)
-    where inputs = getInputs graph name
+signalMatches :: Bool -> String -> Signal -> Bool
+signalMatches expected target (Signal signal _ target') = signal == expected && target == target'
 
-predictOutputConjunction :: [[(Bool, String, String)]] -> M.Map String Component -> String -> Bool -> Int
-predictOutputConjunction states graph name False = foldl lcm 1 (map (\input -> predictOutput states graph input True) inputs)
-    where inputs = getInputs graph name
-predictOutputConjunction states graph name True = minimum (map (\input -> predictOutput states graph input False) inputs)
-    where inputs = getInputs graph name
+predictOutputFlipFlop :: [[Signal]] -> M.Map String Component -> String -> Int
+predictOutputFlipFlop signals graph name = 2 * minimum (inputCycles signals graph False inputs)
+    where inputs = getInputs name graph
 
-predictOutputRx :: [[(Bool, String, String)]] -> M.Map String Component -> String -> Bool -> Int
-predictOutputRx states graph name expected = minimum (map (\input -> predictOutput states graph input expected) inputs)
-    where inputs = getInputs graph name 
+predictOutputConjunction :: [[Signal]] -> M.Map String Component -> String -> Bool -> Int
+predictOutputConjunction signals graph name False = lowestCommonMultiple (inputCycles signals graph True inputs)
+    where inputs = getInputs name graph
+predictOutputConjunction signals graph name True = minimum (inputCycles signals graph False inputs)
+    where inputs = getInputs name graph
+
+lowestCommonMultiple :: [Int] -> Int
+lowestCommonMultiple = foldl lcm 1
+
+predictOutputRx :: [[Signal]] -> M.Map String Component -> String -> Bool -> Int
+predictOutputRx signals graph name expected = minimum (inputCycles signals graph expected inputs)
+    where inputs = getInputs name graph
+
+inputCycles :: [[Signal]] -> Components -> Bool -> [String] -> [Int]
+inputCycles toProcess graph signal = map (getCycle toProcess graph signal)
