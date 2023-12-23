@@ -3,10 +3,10 @@ module P23 (run1, run2, inputLocation) where
 import Lib (textToCoordMap, Coord)
 import qualified Data.Map as M
 
-run1 :: String -> Int
+run1 :: String -> Maybe Int
 run1 = solve1 . parse
 
-run2 :: String -> Int
+run2 :: String -> Maybe Int
 run2 = solve2 . parse
 
 inputLocation :: String
@@ -18,7 +18,7 @@ parse = removeWalls . textToCoordMap
 removeWalls :: M.Map k Char -> M.Map k Char
 removeWalls = M.filter (/= '#')
 
-solve1 :: M.Map Coord Char -> Int
+solve1 :: M.Map Coord Char -> Maybe Int
 solve1 = longestPath . makeGraph
 
 neighbours :: M.Map Coord Char -> Coord -> [Coord]
@@ -31,7 +31,7 @@ neighbours grid node = filter (`M.member` grid) $ neighbours' node
             | c == Just '>' = [(x+1,y)]
             | otherwise = [(x,y+1), (x-1,y), (x,y-1), (x+1,y)]
 
-solve2 :: M.Map Coord a -> Int
+solve2 :: M.Map Coord a -> Maybe Int
 solve2 = solve1 . M.map (const '.')
 
 makeGraph ::  M.Map Coord Char -> M.Map Coord [(Coord, Int)]
@@ -55,16 +55,15 @@ walkPath grid distance cell =
         _ -> (cell, distance)
     where grid' = M.delete cell grid
 
-longestPath :: M.Map Coord [(Coord, Int)] -> Int
+longestPath :: M.Map Coord [(Coord, Int)] -> Maybe Int
 longestPath nodes =
     let start = fst $ M.findMin nodes
         end = fst $ M.findMax nodes
-    in  longestPath' nodes start end 0
+    in  longestPath' nodes start end
 
-longestPath' :: M.Map Coord [(Coord, Int)] -> Coord -> Coord -> Int -> Int
-longestPath' nodes current end distance
-    | M.notMember current nodes = 0
-    | current == end = distance
-    | otherwise = maximum (map longestPath'' (nodes M.! current))
+longestPath' :: M.Map Coord [(Coord, Int)] -> Coord -> Coord -> Maybe Int
+longestPath' nodes current end
+    | current == end = Just 0
+    | otherwise = (maximum . map longestPath'') =<< M.lookup current nodes
         where nodes' = M.delete current nodes
-              longestPath'' (next, newDistance) = longestPath' nodes' next end (distance + newDistance)
+              longestPath'' (next, newDistance) = fmap (newDistance +) (longestPath' nodes' next end)
