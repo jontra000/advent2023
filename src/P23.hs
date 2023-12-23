@@ -19,44 +19,34 @@ removeWalls :: M.Map k Char -> M.Map k Char
 removeWalls = M.filter (/= '#')
 
 solve1 :: M.Map Coord Char -> Int
-solve1 grid = longestPath 0 (finishNode grid) grid 0 (startingNode grid)
-
-longestPath :: Int -> Coord -> M.Map Coord Char -> Int -> Coord -> Int
-longestPath distance targetNode grid bestDistance currentNode
-    | currentNode == targetNode = max distance bestDistance
-    | otherwise = foldl (longestPath distance' targetNode grid') bestDistance nextNodes
-        where   distance' = distance + 1
-                nextNodes = neighbours grid currentNode
-                grid' = M.delete currentNode grid
-
-finishNode :: M.Map Coord a -> Coord
-finishNode = maximum . M.keys
-
-startingNode :: M.Map Coord a -> Coord
-startingNode = minimum . M.keys
+solve1 = longestPath . makeGraph
 
 neighbours :: M.Map Coord Char -> Coord -> [Coord]
-neighbours grid node@(x,y)
-    | c == Just 'v' = filter (`M.member` grid) [(x,y+1)]
-    | c == Just '<' = filter (`M.member` grid) [(x-1,y)]
-    | c == Just '^' = filter (`M.member` grid) [(x,y-1)]
-    | c == Just '>' = filter (`M.member` grid) [(x+1,y)]
-    | otherwise = filter (`M.member` grid) [(x,y+1), (x-1,y), (x,y-1), (x+1,y)]
+neighbours grid node = filter (`M.member` grid) $ neighbours' node
     where c = M.lookup node grid
+          neighbours' (x,y)
+            | c == Just 'v' = [(x,y+1)]
+            | c == Just '<' = [(x-1,y)]
+            | c == Just '^' = [(x,y-1)]
+            | c == Just '>' = [(x+1,y)]
+            | otherwise = [(x,y+1), (x-1,y), (x,y-1), (x+1,y)]
 
 solve2 :: M.Map Coord a -> Int
-solve2 = longestPath2 . makeGraph . M.map (const '.')
+solve2 = solve1 . M.map (const '.')
 
 makeGraph ::  M.Map Coord Char -> M.Map Coord [(Coord, Int)]
-makeGraph grid = M.fromList $ map (makeNode grid) nodes
-    where nodes = filter (isNode grid) $ M.keys grid
+makeGraph grid = M.fromList $ map (makeNode grid) (findNodes grid)
+
+findNodes :: M.Map Coord Char -> [Coord]
+findNodes grid = filter (isNode grid) $ M.keys grid
 
 isNode :: M.Map Coord Char -> Coord -> Bool
 isNode grid = (/=2) . length . neighbours grid
 
 makeNode :: M.Map Coord Char -> Coord -> (Coord, [(Coord, Int)])
-makeNode grid node = (node, map (walkPath grid' 1) (neighbours grid node))
+makeNode grid node = (node, connections)
     where grid' = M.delete node grid
+          connections = map (walkPath grid' 1) (neighbours grid node)
 
 walkPath :: M.Map Coord Char -> Int -> Coord -> (Coord, Int)
 walkPath grid distance cell =
@@ -65,15 +55,16 @@ walkPath grid distance cell =
         _ -> (cell, distance)
     where grid' = M.delete cell grid
 
-longestPath2 :: M.Map Coord [(Coord, Int)] -> Int
-longestPath2 nodes =
+longestPath :: M.Map Coord [(Coord, Int)] -> Int
+longestPath nodes =
     let start = fst $ M.findMin nodes
         end = fst $ M.findMax nodes
-    in  longestPath2' nodes start end 0
+    in  longestPath' nodes start end 0
 
-longestPath2' :: M.Map Coord [(Coord, Int)] -> Coord -> Coord -> Int -> Int
-longestPath2' nodes current end distance
+longestPath' :: M.Map Coord [(Coord, Int)] -> Coord -> Coord -> Int -> Int
+longestPath' nodes current end distance
     | M.notMember current nodes = 0
     | current == end = distance
-    | otherwise = maximum (map (\(next, newDistance) -> longestPath2' nodes' next end (distance + newDistance)) (nodes M.! current))
+    | otherwise = maximum (map longestPath'' (nodes M.! current))
         where nodes' = M.delete current nodes
+              longestPath'' (next, newDistance) = longestPath' nodes' next end (distance + newDistance)
