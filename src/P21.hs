@@ -9,13 +9,16 @@ import Data.Maybe (fromJust)
 import Data.List (find, minimumBy)
 import Data.Function (on)
 
+type Distances = M.Map Coord Int
+type Grid = M.Map Coord Char
+
 run1 :: String -> Int
 run1 = solve1 . parse
 
-parseDup :: Int -> String -> M.Map Coord Char
+parseDup :: Int -> String -> Grid
 parseDup x = parse . dupRows x . dupColumns x
 
-dupColumns :: Int -> String -> [[Char]]
+dupColumns :: Int -> String -> [String]
 dupColumns x = map (concat . replicate x) . lines
 
 dupRows :: Int -> [String] -> String
@@ -27,30 +30,32 @@ run2 = solve2 . parseDup 5
 inputLocation :: String
 inputLocation = "inputs/input21"
 
-solve1 :: M.Map Coord Char -> Int
-solve1 = length . M.filter (<=64) . M.filter ((==0) . (`mod` 2)) . bestPaths
+solve1 :: Grid -> Int
+solve1 = calcManual 64 . bestPaths
 
-startingPosition :: M.Map c Char -> c
+startingPosition :: Grid -> Coord
 startingPosition = fst . fromJust . find ((=='S') . snd) . M.toList
 
-solve2 :: M.Map Coord Char -> Int
-solve2 input = (+ (-2)) $ removeLines limit $ solveTessellated limit (2*dimension `div` 5) start input
+solve2 :: Grid -> Int
+solve2 input = (+ (-2)) $ removeLines limit $ solveTessellated limit expandedDimension start input
     where limit = 26501365
           dimension = getDimension input
+          expandedDimension = 2*dimension `div` 5
           start = (dimension `div` 2, dimension `div` 2)
 
-solveTessellated :: Int -> Int -> Coord -> M.Map Coord Char -> Int
+solveTessellated :: Int -> Int -> Coord -> Grid -> Int
 solveTessellated limit dimension start = sum . map (solveQuadrant limit dimension) . quadrants dimension start
 
-solveQuadrant :: Int -> Int -> M.Map k Int -> Int
-solveQuadrant limit dimension grid
-    | n < 0 = calcManual (limit `mod` dimension) grid
-    | otherwise = ((n+1) * n `div` 2) * gridCount + (n+1) * calcManual (limit `mod` dimension + dimension) grid + (n+2) * calcManual (limit `mod` dimension) grid
+solveQuadrant :: Int -> Int -> Distances -> Int
+solveQuadrant limit dimension grid = fullGridCount + partialGridEvenCount + partialGridOddCount
         where n = limit `div` dimension - 1
-              gridCount = length $ M.filter ((== limit `mod` 2) . (`mod` 2)) grid
+              gridCount = calcManual limit grid
+              fullGridCount = ((n+1) * n `div` 2) * gridCount
+              partialGridEvenCount = (n+1) * calcManual (limit `mod` dimension + dimension) grid
+              partialGridOddCount = (n+2) * calcManual (limit `mod` dimension) grid
 
-quadrants :: Int -> Coord -> M.Map Coord Char -> [M.Map Coord Int]
-quadrants dimension start grid = map (\f -> bestPaths' (f dimension start grid) start) [filterBottomRight, filterBottomLeft, filterTopLeft, filterTopRight]
+quadrants :: Int -> Coord -> Grid -> [Distances]
+quadrants dimension start grid = map (bestPaths' start  . (\f -> f dimension start grid)) [filterBottomRight, filterBottomLeft, filterTopLeft, filterTopRight]
 
 filterBottomRight :: Int -> Coord -> M.Map Coord a -> M.Map Coord a
 filterBottomRight dimension (x,y) = M.filterWithKey (\(x',y') _ -> x' >= x && x' < x + dimension && y' >= y && y' < y + dimension)
@@ -67,39 +72,46 @@ filterTopRight dimension (x,y) = M.filterWithKey (\(x',y') _ -> x' >= x  && x' <
 removeLines :: Int -> Int -> Int
 removeLines limit x = x-(2*limit)
 
-calcManual :: Int -> M.Map k Int -> Int
-calcManual limit = length . M.filter((== limit `mod` 2) . (`mod` 2)) . M.filter (<=limit)
+calcManual :: Int -> Distances -> Int
+calcManual limit = length . M.filter (<=limit) . M.filter((== limit `mod` 2) . (`mod` 2))
 
 getDimension :: M.Map Coord a -> Int
 getDimension = (+1) . maximum . map fst . M.keys
 
-parse :: String -> M.Map Coord Char
+parse :: String -> Grid
 parse = textToCoordMap
 
 neighbours :: Coord -> [Coord]
 neighbours (x,y) = [(x+1,y), (x-1,y), (x,y+1), (x,y-1)]
 
-bestPaths :: M.Map Coord Char -> M.Map Coord Int
-bestPaths input = bestPaths' input (startingPosition input)
+bestPaths :: Grid -> Distances
+bestPaths input = bestPaths' (startingPosition input) input
 
-bestPaths' :: M.Map Coord Char -> Coord -> M.Map Coord Int
-bestPaths' input start = dijkstra21 unvisitedNodes M.empty M.empty start 0
-    where unvisitedNodes = S.delete start $ S.fromList (M.keys (M.filter (/='#') input))
+bestPaths' :: Coord -> Grid -> Distances
+bestPaths' start input = dijkstra21 unvisitedNodes M.empty M.empty start 0
+    where unvisitedNodes = initUnvisitedNodes start input
 
-dijkstra21 :: S.Set Coord -> M.Map Coord Int -> M.Map Coord Int -> Coord -> Int -> M.Map Coord Int
-dijkstra21 unvisitedNodes tentativeNodes foundNodes nextNode distance =
-    let toUpdate = S.fromList $ filter (isUnvisited unvisitedNodes tentativeNodes) (neighbours nextNode)
-        unvisitedNodes' = unvisitedNodes S.\\ toUpdate
-        tentativeNodes' = M.delete nextNode tentativeNodes
-        tentativeNodes'' = foldl (updateDistance (distance+1)) tentativeNodes' toUpdate
-        foundNodes' = M.insert nextNode distance foundNodes
-        (nextNode', distance') = minimumBy (compare `on` snd) $ M.toList tentativeNodes''
-    in  if null tentativeNodes''
-        then foundNodes'
-        else dijkstra21 unvisitedNodes' tentativeNodes'' foundNodes' nextNode' distance'
+initUnvisitedNodes :: Coord -> Grid -> S.Set Coord
+initUnvisitedNodes start = S.delete start . M.keysSet . M.filter (/='#')
 
-isUnvisited :: S.Set Coord -> M.Map Coord a -> Coord -> Bool
+dijkstra21 :: S.Set Coord -> Distances -> Distances -> Coord -> Int -> Distances
+dijkstra21 unvisitedNodes tentativeNodes foundNodes nextNode distance
+    | null tentativeNodes' = foundNodes'
+    | otherwise = dijkstra21 unvisitedNodes' tentativeNodes' foundNodes' nextNode' distance'
+    where   toUpdate = S.fromList $ filter (isUnvisited unvisitedNodes tentativeNodes) (neighbours nextNode)
+            unvisitedNodes' = unvisitedNodes S.\\ toUpdate
+            tentativeNodes' = updateReachable nextNode toUpdate distance tentativeNodes
+            foundNodes' = M.insert nextNode distance foundNodes
+            (nextNode', distance') = minimumBy (compare `on` snd) $ M.toList tentativeNodes'
+
+updateReachable :: Coord -> S.Set Coord -> Int -> Distances -> Distances
+updateReachable nextNode toUpdate distance = updateReachable' toUpdate distance . M.delete nextNode
+
+updateReachable' :: S.Set Coord -> Int -> Distances -> Distances
+updateReachable' toUpdate distance reachable = foldl (updateDistance (distance+1)) reachable toUpdate
+
+isUnvisited :: S.Set Coord -> Distances -> Coord -> Bool
 isUnvisited unvisitedNodes tentativeNodes node = S.member node unvisitedNodes || M.member node tentativeNodes
 
-updateDistance :: Int -> M.Map Coord Int -> Coord -> M.Map Coord Int
+updateDistance :: Int -> Distances -> Coord -> Distances
 updateDistance distance nodes node = M.insertWith min node distance nodes
