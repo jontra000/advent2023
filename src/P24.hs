@@ -22,12 +22,12 @@ parseLine (x:y:z:_:a:b:c:_) = ((read $ init x, read $ init y, read z), (read $ i
 parseLine _ = error "bad input"
 
 solve1 :: [((Double, Double, Double), (Double, Double, Double))] -> Int
-solve1 = sum . map countCollisions . tails . mapMaybe (exitPoints 200000000000000.0 400000000000000.0)
+solve1 = sum . map collisions . tails . mapMaybe (segmentInArea 200000000000000.0 400000000000000.0)
 
-exitPoints :: Double -> Double -> ((Double, Double, Double), (Double, Double, Double)) -> Maybe ((Double, Double), (Double, Double))
-exitPoints entry exit ((x,y,_), (dx,dy,_))
+segmentInArea :: Double -> Double -> ((Double, Double, Double), (Double, Double, Double)) -> Maybe ((Double, Double), (Double, Double))
+segmentInArea entry exit ((x,y,_), (dx,dy,_))
     | u1 > u2 = Nothing
-    | u2 < 0 = Nothing
+    | u2 < 0 = Nothing -- only take points in the future
     | otherwise = Just ((x + p2 * u1, y + p4 * u1), (x + p2 * u2, y + p4 * u2))
     where   q1 = x - entry
             q2 = exit - x
@@ -44,9 +44,9 @@ exitPoints entry exit ((x,y,_), (dx,dy,_))
             u1 = max 0 $ max (if p1 < 0 then r1 else r2) (if p3 < 0 then r3 else r4)
             u2 = min (if p1 < 0 then r2 else r1) (if p3 < 0 then r4 else r3)
 
-countCollisions :: [((Double, Double), (Double, Double))] -> Int
-countCollisions [] = 0
-countCollisions (current:next) = length $ filter (crosses current) next
+collisions :: [((Double, Double), (Double, Double))] -> Int
+collisions [] = 0
+collisions (current:next) = length $ filter (crosses current) next
 
 crosses :: ((Double, Double), (Double, Double)) -> ((Double, Double), (Double, Double)) -> Bool
 crosses (p1, q1) (p2, q2)
@@ -71,23 +71,24 @@ orientation (px, py) (qx, qy) (rx, ry)
     | otherwise = 1
         where val = (qy - py) * (rx - qx) - (qx - px) * (ry - qy)
 
+-- we take the median of many results because floating point errors cause the result to vary
 solve2 :: [((Double, Double, Double), (Double, Double, Double))] -> Double
-solve2 = median . map solveShift . takeWhile ((>2) . length) . tails
+solve2 = median . map solveShifted . takeWhile ((>2) . length) . tails
 
 median :: [Double] -> Double
 median xs = sort xs !! (length xs `div` 2) 
 
-solveShift :: [((Double, Double, Double), (Double, Double, Double))] -> Double
-solveShift xs =
+solveShifted :: [((Double, Double, Double), (Double, Double, Double))] -> Double
+solveShifted xs =
     let dx = minimum $ map (\((x,_,_), _) -> x) xs
         dy = minimum $ map (\((_,y,_), _) -> y) xs
         dz = minimum $ map (\((_,_,z), _) -> z) xs
         xs' = map (\((x,y,z), v) -> ((x-dx, y-dy, z-dz), v)) xs
-        result = solveLa xs'
+        result = solveLinearAlgebra xs'
     in  result + dx + dy + dz
 
-solveLa :: [((Double, Double, Double), (Double, Double, Double))] -> Double
-solveLa ((((ax, ay, az), (vax, vay, vaz)):((bx, by, bz), (vbx, vby, vbz)):((cx, cy, cz), (vcx, vcy, vcz)):_)) =
+solveLinearAlgebra :: [((Double, Double, Double), (Double, Double, Double))] -> Double
+solveLinearAlgebra ((((ax, ay, az), (vax, vay, vaz)):((bx, by, bz), (vbx, vby, vbz)):((cx, cy, cz), (vcx, vcy, vcz)):_)) =
     let m = Mat.fromLists [
             [ vay - vby, vbx - vax, 0.0,       by - ay, ax - bx, 0.0     ],
             [ vay - vcy, vcx - vax, 0.0,       cy - ay, ax - cx, 0.0     ],
@@ -102,6 +103,11 @@ solveLa ((((ax, ay, az), (vax, vay, vaz)):((bx, by, bz), (vbx, vby, vbz)):((cx, 
             (cx * vcz - cz * vcx) - (ax * vaz - az * vax),
             (bz * vby - by * vbz) - (az * vay - ay * vaz),
             (cz * vcy - cy * vcz) - (az * vay - ay * vaz)]
-        result = Mat.rref (m Mat.<|> b)
-    in  sum $ take 3 $ last $ transpose $ Mat.toLists $ fromRight (error "couldn't solve matrix") result
-solveLa _ = error "bad input"
+    in  locationSum (Mat.rref (m Mat.<|> b))
+solveLinearAlgebra _ = error "bad input"
+
+locationSum :: Either a (Mat.Matrix Double) -> Double
+locationSum = sum . take 3 . resultColumn . fromRight (error "couldn't solve matrix")
+
+resultColumn :: Mat.Matrix a -> [a]
+resultColumn = last . transpose . Mat.toLists
