@@ -1,4 +1,4 @@
-module Lib (dijkstra, textToCoordMap, Coord) where
+module Lib (memoize, dijkstra, textToCoordMap, Coord) where
 
 import qualified Data.Map as M
 
@@ -54,3 +54,11 @@ minTentativeDistance Nothing key (Just tentativeDistance) = Just (key, tentative
 minTentativeDistance prev@(Just (_, prevDistance)) key (Just tentativeDistance)
     | tentativeDistance < prevDistance = Just (key, tentativeDistance)
     | otherwise = prev
+    
+memoize :: Ord a => M.Map a b -> a -> (b, M.Map a b) -> (b, M.Map a b)
+memoize cache key f = 
+    case M.lookup key cache of
+        Just x -> (x, cache)
+        Nothing ->
+            let (result, cache') = f
+            in  (result, M.insert key result cache')
